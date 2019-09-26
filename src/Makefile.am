@@ -1,10 +1,12 @@
 libexec_PROGRAMS = geoclue-gpsd3
 
 geoclue_gpsd3_CFLAGS =	\
-    $(MASTER_CFLAGS)
+    $(GEOCLUE_CFLAGS) \
+    $(GPSD_CFLAGS) 
 
 geoclue_gpsd3_LDADD =		\
-    $(MASTER_LIBS)
+    $(GEOCLUE_LIBS)		\
+    $(GPSD_LIBS)
 
 geoclue_gpsd3_SOURCES =		\
     geoclue-gpsd3.c

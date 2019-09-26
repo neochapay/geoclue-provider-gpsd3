@@ -38,6 +38,8 @@
 #include <geoclue/gc-iface-position.h>
 #include <geoclue/gc-iface-velocity.h>
 
+#include <geoclue/gc-iface-satellite.h>
+
 struct gps_data_t gps_raw_data;
 
 typedef struct gps_data_t gps_data_l;
@@ -78,6 +80,7 @@ typedef struct {
 
 static void geoclue_gpsd_position_init (GcIfacePositionClass *iface);
 static void geoclue_gpsd_velocity_init (GcIfaceVelocityClass *iface);
+static void geoclue_gpsd_satellite_init (GcIfaceSatelliteClass *iface);
 
 #define GEOCLUE_TYPE_GPSD (geoclue_gpsd_get_type ())
 #define GEOCLUE_GPSD(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GEOCLUE_TYPE_GPSD, GeoclueGpsd))
@@ -86,7 +89,9 @@ G_DEFINE_TYPE_WITH_CODE (GeoclueGpsd, geoclue_gpsd, GC_TYPE_PROVIDER,
                          G_IMPLEMENT_INTERFACE (GC_TYPE_IFACE_POSITION,
                                                 geoclue_gpsd_position_init)
                          G_IMPLEMENT_INTERFACE (GC_TYPE_IFACE_VELOCITY,
-                                                geoclue_gpsd_velocity_init))
+                                                geoclue_gpsd_velocity_init)
+                         G_IMPLEMENT_INTERFACE (GC_TYPE_IFACE_SATELLITE,
+                                                geoclue_gpsd_satellite_init))
 
 static void geoclue_gpsd_stop_gpsd (GeoclueGpsd *self);
 static gboolean geoclue_gpsd_start_gpsd (GeoclueGpsd *self);
@@ -95,7 +100,6 @@ static gboolean geoclue_gpsd_start_gpsd (GeoclueGpsd *self);
 /* defining global GeoclueGpsd because gpsd does not support "user_data"
  * pointers in callbacks */
 GeoclueGpsd *gpsd;
-
 
 
 /* Geoclue interface */
@@ -341,6 +345,58 @@ geoclue_gpsd_update_velocity (GeoclueGpsd *gpsd)
 }
 
 static void
+geoclue_gpsd_update_satellite (GeoclueGpsd *gpsd)
+{
+	GValue val = G_VALUE_INIT;
+	g_value_init (&val, G_TYPE_INT);
+
+	gps_fix *fix = &gps_raw_data.fix;
+	gps_fix *last_fix = gpsd->last_fix;
+	gboolean changed = FALSE;
+	
+	int satellite_used = gps_raw_data.satellites_used;
+	int satellite_visible = gps_raw_data.satellites_visible;
+
+	GArray *used_prn;
+	GPtrArray *sat_info;
+
+	if(satellite_visible > 0) {
+		used_prn = g_array_new(FALSE,TRUE, satellite_used);
+		sat_info = g_ptr_array_new();
+
+		for(int i=0; i < satellite_visible; i++)
+		{
+			if (gps_raw_data.skyview[i].used) {
+				g_array_append_val(used_prn, gps_raw_data.skyview[i].PRN);
+			}
+
+			/*Calculate satellites*/
+			GValueArray *sat = g_value_array_new (4);
+			g_value_set_int(&val, gps_raw_data.skyview[i].PRN);
+			g_value_array_append (sat, &val); 
+			g_value_set_int(&val, gps_raw_data.skyview[i].azimuth);
+			g_value_array_append (sat, &val);
+			g_value_set_int(&val, gps_raw_data.skyview[i].elevation);
+			g_value_array_append (sat, &val);
+			g_value_set_int(&val, gps_raw_data.skyview[i].ss);
+			g_value_array_append (sat, &val);
+
+			g_ptr_array_add(sat_info, (gpointer) sat);
+		}
+		g_value_unset (&val);
+
+		gc_iface_satellite_emit_satellite_changed
+			(GC_IFACE_SATELLITE (gpsd),
+				(int)(gpsd->last_fix->time+0.5),
+				satellite_used,
+				satellite_visible,
+				used_prn,
+				sat_info
+			);
+	}
+}
+
+static void
 geoclue_gpsd_update_status (GeoclueGpsd *gpsd)
 {
 	GeoclueStatus status;
@@ -373,6 +429,7 @@ gpsd_raw_hook (struct gps_data_t *gpsdata, char *message, size_t len)
 	geoclue_gpsd_update_status (gpsd);
 	geoclue_gpsd_update_position (gpsd);
 	geoclue_gpsd_update_velocity (gpsd);
+	geoclue_gpsd_update_satellite (gpsd);
 }
 
 static void
@@ -484,18 +541,78 @@ get_velocity (GcIfaceVelocity       *gc,
 	return TRUE;
 }
 
+static gboolean
+get_satellite (GcIfaceSatellite *gc,
+				    int              *timestamp,
+				    int              *satellite_used,
+				    int              *satellite_visible,
+				    GArray          **used_prn,
+				    GPtrArray       **sat_info,
+				    GError          **error)
+{
+	GeoclueGpsd *gpsd = GEOCLUE_GPSD (gc);
+	*timestamp = (int)(gpsd->last_fix->time+0.5);
+	*satellite_used = gps_raw_data.satellites_used;
+	*satellite_visible = gps_raw_data.satellites_visible; 
+
+	GValue val = G_VALUE_INIT;
+	g_value_init (&val, G_TYPE_INT);
+
+	if(satellite_visible > 0) {
+		used_prn = g_array_new(FALSE,TRUE, satellite_used);
+		sat_info = g_ptr_array_new();
+
+		for(int i=0; i < satellite_visible; i++)
+		{
+			if (gps_raw_data.skyview[i].used) {
+				g_array_append_val(used_prn, gps_raw_data.skyview[i].PRN);
+			}
+
+			/*Calculate satellites*/
+			GValueArray *sat = g_value_array_new (4);
+			g_value_set_int(&val, gps_raw_data.skyview[i].PRN);
+			g_value_array_append (sat, &val); 
+			g_value_set_int(&val, gps_raw_data.skyview[i].azimuth);
+			g_value_array_append (sat, &val);
+			g_value_set_int(&val, gps_raw_data.skyview[i].elevation);
+			g_value_array_append (sat, &val);
+			g_value_set_int(&val, gps_raw_data.skyview[i].ss);
+			g_value_array_append (sat, &val);
+
+			g_ptr_array_add(sat_info, (gpointer) sat);
+		}
+		g_value_unset (&val);
+
+		gc_iface_satellite_emit_satellite_changed
+			(GC_IFACE_SATELLITE (gpsd),
+				(int)(gpsd->last_fix->time+0.5),
+				satellite_used,
+				satellite_visible,
+				used_prn,
+				sat_info
+			);
+	}
+	
+	return TRUE;
+}
+
+
 static void
 geoclue_gpsd_velocity_init (GcIfaceVelocityClass *iface)
 {
 	iface->get_velocity = get_velocity;
 }
 
+static void
+geoclue_gpsd_satellite_init (GcIfaceSatelliteClass *iface)
+{
+	iface->get_satellite = get_satellite;
+}
+
 int
 main (int    argc,
       char **argv)
 {
-	g_type_init ();
-	
 	gpsd = g_object_new (GEOCLUE_TYPE_GPSD, NULL);
 	
 	gpsd->loop = g_main_loop_new (NULL, TRUE);
