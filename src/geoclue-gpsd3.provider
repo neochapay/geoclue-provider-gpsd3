@@ -1,0 +1,8 @@
+[Geoclue Provider]
+Name=GPSd
+Service=org.freedesktop.Geoclue.Providers.Gpsd3
+Path=/org/freedesktop/Geoclue/Providers/Gpsd3
+Requires=RequiresGPS
+Provides=ProvidesUpdates
+Accuracy=Detailed
+Interfaces=org.freedesktop.Geoclue.Position;org.freedesktop.Geoclue.Velocity
