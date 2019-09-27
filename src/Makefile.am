@@ -1,6 +1,6 @@
 libexec_PROGRAMS = geoclue-gpsd3
 
-geoclue_gpsd3_CFLAGS =	\
+geoclue_gpsd3_CFLAGS =	-std=c99 \
     $(GEOCLUE_CFLAGS) \
     $(GPSD_CFLAGS) 
 

@@ -555,6 +555,8 @@ get_satellite (GcIfaceSatellite *gc,
 	*satellite_used = gps_raw_data.satellites_used;
 	*satellite_visible = gps_raw_data.satellites_visible; 
 
+	int i;
+	
 	GValue val = G_VALUE_INIT;
 	g_value_init (&val, G_TYPE_INT);
 
@@ -562,7 +564,7 @@ get_satellite (GcIfaceSatellite *gc,
 		used_prn = g_array_new(FALSE,TRUE, satellite_used);
 		sat_info = g_ptr_array_new();
 
-		for(int i=0; i < satellite_visible; i++)
+		for(i=0; i < satellite_visible; i++)
 		{
 			if (gps_raw_data.skyview[i].used) {
 				g_array_append_val(used_prn, gps_raw_data.skyview[i].PRN);
