@@ -101,6 +101,9 @@ static gboolean geoclue_gpsd_start_gpsd (GeoclueGpsd *self);
  * pointers in callbacks */
 GeoclueGpsd *gpsd;
 
+/*Arrays for satelite interfaces */
+GArray *used_prn;
+GPtrArray *sat_info;
 
 /* Geoclue interface */
 static gboolean
@@ -354,20 +357,22 @@ geoclue_gpsd_update_satellite (GeoclueGpsd *gpsd)
 	gps_fix *last_fix = gpsd->last_fix;
 	gboolean changed = FALSE;
 	
-	int satellite_used = gps_raw_data.satellites_used;
-	int satellite_visible = gps_raw_data.satellites_visible;
+	int satellites_used = gps_raw_data.satellites_used;
+	int satellites_visible = gps_raw_data.satellites_visible;
+	int timestamp = gps_raw_data.skyview_time;
 
-	GArray *used_prn;
-	GPtrArray *sat_info;
+	if(satellites_visible > 0) {
+		if(satellites_visible > MAXCHANNELS) {
+			satellites_visible = MAXCHANNELS;
+		}
 
-	if(satellite_visible > 0) {
-		used_prn = g_array_new(FALSE,TRUE, satellite_used);
+		used_prn = g_array_new(FALSE,FALSE, sizeof(int));
 		sat_info = g_ptr_array_new();
 
-		for(int i=0; i < satellite_visible; i++)
-		{
+		for(int i=0; i < satellites_visible; i++) {
 			if (gps_raw_data.skyview[i].used) {
-				g_array_append_val(used_prn, gps_raw_data.skyview[i].PRN);
+				int prn = gps_raw_data.skyview[i].PRN;
+				g_array_append_val(used_prn, prn);
 			}
 
 			/*Calculate satellites*/
@@ -385,11 +390,13 @@ geoclue_gpsd_update_satellite (GeoclueGpsd *gpsd)
 		}
 		g_value_unset (&val);
 
+		gps_raw_data.set &= ~(SATELLITE_SET);
+
 		gc_iface_satellite_emit_satellite_changed
 			(GC_IFACE_SATELLITE (gpsd),
-				(int)(gpsd->last_fix->time+0.5),
-				satellite_used,
-				satellite_visible,
+				timestamp,
+				satellites_used,
+				satellites_visible,
 				used_prn,
 				sat_info
 			);
@@ -551,50 +558,10 @@ get_satellite (GcIfaceSatellite *gc,
 				    GError          **error)
 {
 	GeoclueGpsd *gpsd = GEOCLUE_GPSD (gc);
-	*timestamp = (int)(gpsd->last_fix->time+0.5);
+	*timestamp = (time_t) gps_raw_data.skyview_time;
 	*satellite_used = gps_raw_data.satellites_used;
 	*satellite_visible = gps_raw_data.satellites_visible; 
 
-	int i;
-	
-	GValue val = G_VALUE_INIT;
-	g_value_init (&val, G_TYPE_INT);
-
-	if(satellite_visible > 0) {
-		used_prn = g_array_new(FALSE,TRUE, satellite_used);
-		sat_info = g_ptr_array_new();
-
-		for(i=0; i < satellite_visible; i++)
-		{
-			if (gps_raw_data.skyview[i].used) {
-				g_array_append_val(used_prn, gps_raw_data.skyview[i].PRN);
-			}
-
-			/*Calculate satellites*/
-			GValueArray *sat = g_value_array_new (4);
-			g_value_set_int(&val, gps_raw_data.skyview[i].PRN);
-			g_value_array_append (sat, &val); 
-			g_value_set_int(&val, gps_raw_data.skyview[i].azimuth);
-			g_value_array_append (sat, &val);
-			g_value_set_int(&val, gps_raw_data.skyview[i].elevation);
-			g_value_array_append (sat, &val);
-			g_value_set_int(&val, gps_raw_data.skyview[i].ss);
-			g_value_array_append (sat, &val);
-
-			g_ptr_array_add(sat_info, (gpointer) sat);
-		}
-		g_value_unset (&val);
-
-		gc_iface_satellite_emit_satellite_changed
-			(GC_IFACE_SATELLITE (gpsd),
-				(int)(gpsd->last_fix->time+0.5),
-				satellite_used,
-				satellite_visible,
-				used_prn,
-				sat_info
-			);
-	}
-	
 	return TRUE;
 }
 

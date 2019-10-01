@@ -1,5 +1,5 @@
 Name: geoclue-provider-gpsd3
-Version: 0.1
+Version: 0.2
 Release: 1
 Summary: geoclue provider for gpsd daemon
 Group: System/Libraries
