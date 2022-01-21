@@ -32,6 +32,7 @@
 #include <math.h>
 #include <gps.h>
 #include <string.h>
+#include <time.h>
 
 #include <geoclue/geoclue-error.h>
 #include <geoclue/gc-provider.h>
@@ -104,6 +105,12 @@ GeoclueGpsd *gpsd;
 /*Arrays for satelite interfaces */
 GArray *used_prn;
 GPtrArray *sat_info;
+
+static time_t 
+as_time_t(timespec_t *ts)
+{
+	return (int) ts->tv_sec + ts->tv_nsec / 1000000.0 + 0.5;
+}
 
 /* Geoclue interface */
 static gboolean
@@ -283,7 +290,7 @@ geoclue_gpsd_update_position (GeoclueGpsd *gpsd)
 	
 	gc_iface_position_emit_position_changed 
 		(GC_IFACE_POSITION (gpsd), gpsd->last_pos_fields,
-		 (int)(last_fix->time+0.5), 
+		 as_time_t(&last_fix->time), 
 		 last_fix->latitude, last_fix->longitude, last_fix->altitude, 
 		 gpsd->last_accuracy);
 	
@@ -342,7 +349,7 @@ geoclue_gpsd_update_velocity (GeoclueGpsd *gpsd)
 		
 		gc_iface_velocity_emit_velocity_changed 
 			(GC_IFACE_VELOCITY (gpsd), gpsd->last_velo_fields,
-			 (int)(last_fix->time+0.5),
+			 as_time_t(&last_fix->time),
 			 last_fix->speed, last_fix->track, last_fix->climb);
 	}
 }
@@ -359,7 +366,7 @@ geoclue_gpsd_update_satellite (GeoclueGpsd *gpsd)
 	
 	int satellites_used = gps_raw_data.satellites_used;
 	int satellites_visible = gps_raw_data.satellites_visible;
-	int timestamp = gps_raw_data.skyview_time;
+	int timestamp = as_time_t(&gps_raw_data.skyview_time);
 
 	if(satellites_visible > 0) {
 		if(satellites_visible > MAXCHANNELS) {
@@ -409,12 +416,11 @@ geoclue_gpsd_update_status (GeoclueGpsd *gpsd)
 	GeoclueStatus status;
 	
 	/* gpsdata->online is supposedly always up-to-date */
-	if (gps_raw_data.online <= 0) {
+	if (gps_raw_data.online.tv_sec <= 0) {
 		status = GEOCLUE_STATUS_UNAVAILABLE;
 	} else if (gps_raw_data.set & STATUS_SET) {
 		gps_raw_data.set &= ~(STATUS_SET);
-		
-		if (gps_raw_data.status > 0) {
+		if (gps_raw_data.fix.mode > 1) {  # 2D or 3D fix
 			status = GEOCLUE_STATUS_AVAILABLE;
 		} else {
 			status = GEOCLUE_STATUS_ACQUIRING;
@@ -465,14 +471,17 @@ gboolean
 gpsd_poll(gpointer data)
 {
 	GeoclueGpsd *self = (GeoclueGpsd*)data;
-	if (gps_waiting(&gps_raw_data, 500)) {
+        boolean found = false;
+	while (gps_waiting(&gps_raw_data, 500)) {
 		if (gps_read(&gps_raw_data, NULL, 0) == -1) {
 			geoclue_gpsd_set_status (self, GEOCLUE_STATUS_ERROR);
 			geoclue_gpsd_stop_gpsd(self);
 			return FALSE;
-		} else {
-			gpsd_raw_hook(&gps_raw_data, NULL, 0);
 		}
+		found = true;
+	}
+	if (found) {
+        	gpsd_raw_hook(&gps_raw_data, NULL, 0);  # process last proper record
 	}
 	return TRUE;
 }
@@ -512,7 +521,7 @@ get_position (GcIfacePosition       *gc,
 {
 	GeoclueGpsd *gpsd = GEOCLUE_GPSD (gc);
 	
-	*timestamp = (int)(gpsd->last_fix->time+0.5);
+	*timestamp = as_time_t(&gpsd->last_fix->time);
 	*latitude = gpsd->last_fix->latitude;
 	*longitude = gpsd->last_fix->longitude;
 	*altitude = gpsd->last_fix->altitude;
@@ -539,7 +548,7 @@ get_velocity (GcIfaceVelocity       *gc,
 {
 	GeoclueGpsd *gpsd = GEOCLUE_GPSD (gc);
 	
-	*timestamp = (int)(gpsd->last_fix->time+0.5);
+	*timestamp = as_time_t(&gpsd->last_fix->time);
 	*speed = gpsd->last_fix->speed;
 	*direction = gpsd->last_fix->track;
 	*climb = gpsd->last_fix->climb;
@@ -558,7 +567,7 @@ get_satellite (GcIfaceSatellite *gc,
 				    GError          **error)
 {
 	GeoclueGpsd *gpsd = GEOCLUE_GPSD (gc);
-	*timestamp = (time_t) gps_raw_data.skyview_time;
+	*timestamp = as_time_t(&gps_raw_data.skyview_time);
 	*satellite_used = gps_raw_data.satellites_used;
 	*satellite_visible = gps_raw_data.satellites_visible; 
 
