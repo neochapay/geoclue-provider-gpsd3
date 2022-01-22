@@ -420,7 +420,7 @@ geoclue_gpsd_update_status (GeoclueGpsd *gpsd)
 		status = GEOCLUE_STATUS_UNAVAILABLE;
 	} else if (gps_raw_data.set & STATUS_SET) {
 		gps_raw_data.set &= ~(STATUS_SET);
-		if (gps_raw_data.fix.mode > 1) {  # 2D or 3D fix
+		if (gps_raw_data.fix.mode > 1) {  /*  2D or 3D fix */
 			status = GEOCLUE_STATUS_AVAILABLE;
 		} else {
 			status = GEOCLUE_STATUS_ACQUIRING;
@@ -471,17 +471,17 @@ gboolean
 gpsd_poll(gpointer data)
 {
 	GeoclueGpsd *self = (GeoclueGpsd*)data;
-        boolean found = false;
+        gboolean found = FALSE;
 	while (gps_waiting(&gps_raw_data, 500)) {
 		if (gps_read(&gps_raw_data, NULL, 0) == -1) {
 			geoclue_gpsd_set_status (self, GEOCLUE_STATUS_ERROR);
 			geoclue_gpsd_stop_gpsd(self);
 			return FALSE;
 		}
-		found = true;
+		found = TRUE;
 	}
 	if (found) {
-        	gpsd_raw_hook(&gps_raw_data, NULL, 0);  # process last proper record
+                gpsd_raw_hook(&gps_raw_data, NULL, 0);  /* process last proper record */
 	}
 	return TRUE;
 }

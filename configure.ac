@@ -7,7 +7,7 @@ AC_PROG_INSTALL
 AC_PROG_LIBTOOL
 
 PKG_CHECK_MODULES(GPSD, [
-		  libgps >= 3.19
+		  libgps >= 3.20
 ])
 
 AC_SUBST(GPS_LIBS)
